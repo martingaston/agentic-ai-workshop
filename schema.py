@@ -60,8 +60,9 @@ class TransactionRecord:
 
     # Target Labels
     is_abuse: bool
-    abuse_type: Literal['legitimate', 'fake_account', 'account_takeover', 'payment_fraud']
+    abuse_type: Literal['legitimate', 'suspicious_but_legitimate', 'fake_account', 'account_takeover', 'payment_fraud']
     abuse_confidence: float
+    difficulty_tier: Literal['easy', 'medium', 'hard', 'n/a']  # Fraud detection difficulty (n/a for legitimate)
 
     def to_dict(self) -> dict:
         """Convert record to dictionary for CSV export."""

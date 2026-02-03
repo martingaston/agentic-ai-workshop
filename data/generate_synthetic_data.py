@@ -26,6 +26,7 @@ from data.patterns import (
     FakeAccountPatternGenerator,
     AccountTakeoverPatternGenerator,
     PaymentFraudPatternGenerator,
+    SuspiciousButLegitimatePatternGenerator,
 )
 
 
@@ -41,7 +42,8 @@ def generate_timestamp(
 
 def generate_dataset(
     size: int,
-    legitimate_ratio: float = 0.75,
+    legitimate_ratio: float = 0.70,
+    suspicious_but_legitimate_ratio: float = 0.05,
     fake_account_ratio: float = 0.10,
     account_takeover_ratio: float = 0.08,
     payment_fraud_ratio: float = 0.07,
@@ -54,7 +56,8 @@ def generate_dataset(
 
     Args:
         size: Total number of records to generate
-        legitimate_ratio: Proportion of legitimate transactions (default: 0.75)
+        legitimate_ratio: Proportion of legitimate transactions (default: 0.70)
+        suspicious_but_legitimate_ratio: Proportion of suspicious but legit (default: 0.05)
         fake_account_ratio: Proportion of fake account abuse (default: 0.10)
         account_takeover_ratio: Proportion of account takeover (default: 0.08)
         payment_fraud_ratio: Proportion of payment fraud (default: 0.07)
@@ -66,7 +69,8 @@ def generate_dataset(
         DataFrame with generated transaction records
     """
     # Validate ratios sum to approximately 1.0
-    total_ratio = legitimate_ratio + fake_account_ratio + account_takeover_ratio + payment_fraud_ratio
+    total_ratio = (legitimate_ratio + suspicious_but_legitimate_ratio +
+                   fake_account_ratio + account_takeover_ratio + payment_fraud_ratio)
     if not (0.99 <= total_ratio <= 1.01):
         raise ValueError(f"Ratios must sum to 1.0, got {total_ratio}")
 
@@ -77,6 +81,7 @@ def generate_dataset(
 
     # Initialize pattern generators
     legit_gen = LegitimatePatternGenerator(seed=seed)
+    suspicious_gen = SuspiciousButLegitimatePatternGenerator(seed=seed)
     fake_gen = FakeAccountPatternGenerator(seed=seed)
     takeover_gen = AccountTakeoverPatternGenerator(seed=seed)
     fraud_gen = PaymentFraudPatternGenerator(seed=seed)
@@ -87,17 +92,21 @@ def generate_dataset(
     if start_date is None:
         start_date = end_date - timedelta(days=90)
 
-    # Calculate counts for each abuse type
+    # Calculate counts for each type
     legitimate_count = int(size * legitimate_ratio)
+    suspicious_but_legitimate_count = int(size * suspicious_but_legitimate_ratio)
     fake_account_count = int(size * fake_account_ratio)
     account_takeover_count = int(size * account_takeover_ratio)
-    payment_fraud_count = size - legitimate_count - fake_account_count - account_takeover_count
+    payment_fraud_count = (size - legitimate_count - suspicious_but_legitimate_count -
+                           fake_account_count - account_takeover_count)
 
     print(f"Generating {size} records:")
     print(f"  - Legitimate: {legitimate_count} ({legitimate_count/size*100:.1f}%)")
+    print(f"  - Suspicious but legitimate: {suspicious_but_legitimate_count} ({suspicious_but_legitimate_count/size*100:.1f}%)")
     print(f"  - Fake accounts: {fake_account_count} ({fake_account_count/size*100:.1f}%)")
     print(f"  - Account takeover: {account_takeover_count} ({account_takeover_count/size*100:.1f}%)")
     print(f"  - Payment fraud: {payment_fraud_count} ({payment_fraud_count/size*100:.1f}%)")
+    print(f"\nDifficulty distribution for abuse (easy: 30%, medium: 50%, hard: 20%)")
 
     records: List[TransactionRecord] = []
 
@@ -110,31 +119,44 @@ def generate_dataset(
         record_data = legit_gen.generate(timestamp)
         records.append(TransactionRecord(**record_data))
 
-    # Generate fake account transactions
+    # Generate suspicious but legitimate transactions
+    print(f"\nGenerating suspicious but legitimate transactions...")
+    for i in range(suspicious_but_legitimate_count):
+        if (i + 1) % 1000 == 0:
+            print(f"  {i + 1}/{suspicious_but_legitimate_count}")
+        timestamp = generate_timestamp(start_date, end_date)
+        record_data = suspicious_gen.generate(timestamp)
+        records.append(TransactionRecord(**record_data))
+
+    # Generate fake account transactions with difficulty tiers
+    # 30% easy, 50% medium, 20% hard
     print(f"\nGenerating fake account transactions...")
     for i in range(fake_account_count):
         if (i + 1) % 1000 == 0:
             print(f"  {i + 1}/{fake_account_count}")
         timestamp = generate_timestamp(start_date, end_date)
-        record_data = fake_gen.generate(timestamp)
+        difficulty = random.choices(['easy', 'medium', 'hard'], weights=[0.3, 0.5, 0.2])[0]
+        record_data = fake_gen.generate(timestamp, difficulty=difficulty)
         records.append(TransactionRecord(**record_data))
 
-    # Generate account takeover transactions
+    # Generate account takeover transactions with difficulty tiers
     print(f"\nGenerating account takeover transactions...")
     for i in range(account_takeover_count):
         if (i + 1) % 1000 == 0:
             print(f"  {i + 1}/{account_takeover_count}")
         timestamp = generate_timestamp(start_date, end_date)
-        record_data = takeover_gen.generate(timestamp)
+        difficulty = random.choices(['easy', 'medium', 'hard'], weights=[0.3, 0.5, 0.2])[0]
+        record_data = takeover_gen.generate(timestamp, difficulty=difficulty)
         records.append(TransactionRecord(**record_data))
 
-    # Generate payment fraud transactions
+    # Generate payment fraud transactions with difficulty tiers
     print(f"\nGenerating payment fraud transactions...")
     for i in range(payment_fraud_count):
         if (i + 1) % 1000 == 0:
             print(f"  {i + 1}/{payment_fraud_count}")
         timestamp = generate_timestamp(start_date, end_date)
-        record_data = fraud_gen.generate(timestamp)
+        difficulty = random.choices(['easy', 'medium', 'hard'], weights=[0.3, 0.5, 0.2])[0]
+        record_data = fraud_gen.generate(timestamp, difficulty=difficulty)
         records.append(TransactionRecord(**record_data))
 
     # Convert to DataFrame
@@ -175,7 +197,13 @@ def validate_dataset(df: pd.DataFrame) -> None:
 
     # Check is_abuse flag consistency
     abuse_flag_check = df.groupby('abuse_type')['is_abuse'].all()
-    if abuse_flag_check['legitimate'] == False and abuse_flag_check.drop('legitimate').all():
+    legitimate_types = ['legitimate', 'suspicious_but_legitimate']
+    abuse_types = [t for t in abuse_flag_check.index if t not in legitimate_types]
+
+    legit_correct = all(abuse_flag_check[t] == False for t in legitimate_types if t in abuse_flag_check.index)
+    abuse_correct = all(abuse_flag_check[t] == True for t in abuse_types)
+
+    if legit_correct and abuse_correct:
         print("\n✓ is_abuse flag consistent with abuse_type")
     else:
         print("\nWARNING: is_abuse flag inconsistent with abuse_type")
@@ -257,8 +285,14 @@ def main():
     parser.add_argument(
         '--legitimate-ratio',
         type=float,
-        default=0.75,
-        help="Proportion of legitimate transactions (default: 0.75)"
+        default=0.70,
+        help="Proportion of legitimate transactions (default: 0.70)"
+    )
+    parser.add_argument(
+        '--suspicious-but-legitimate-ratio',
+        type=float,
+        default=0.05,
+        help="Proportion of suspicious but legitimate transactions (default: 0.05)"
     )
     parser.add_argument(
         '--fake-account-ratio',
@@ -300,6 +334,7 @@ def main():
     print(f"  Output: {output_path}")
     print(f"  Seed: {args.seed}")
     print(f"  Legitimate ratio: {args.legitimate_ratio}")
+    print(f"  Suspicious but legitimate ratio: {args.suspicious_but_legitimate_ratio}")
     print(f"  Fake account ratio: {args.fake_account_ratio}")
     print(f"  Account takeover ratio: {args.account_takeover_ratio}")
     print(f"  Payment fraud ratio: {args.payment_fraud_ratio}")
@@ -309,6 +344,7 @@ def main():
     df = generate_dataset(
         size=args.size,
         legitimate_ratio=args.legitimate_ratio,
+        suspicious_but_legitimate_ratio=args.suspicious_but_legitimate_ratio,
         fake_account_ratio=args.fake_account_ratio,
         account_takeover_ratio=args.account_takeover_ratio,
         payment_fraud_ratio=args.payment_fraud_ratio,

@@ -53,7 +53,7 @@ class BasePatternGenerator:
 class LegitimatePatternGenerator(BasePatternGenerator):
     """Generates legitimate transaction patterns."""
 
-    def generate(self, timestamp: datetime) -> Dict[str, Any]:
+    def generate(self, timestamp: datetime, difficulty: str = 'n/a') -> Dict[str, Any]:
         """Generate a legitimate transaction record."""
         # Account created 30-365 days ago
         account_age_days = random.randint(30, 365)
@@ -148,31 +148,59 @@ class LegitimatePatternGenerator(BasePatternGenerator):
             'is_abuse': False,
             'abuse_type': 'legitimate',
             'abuse_confidence': 0.0,
+            'difficulty_tier': 'n/a',
         }
 
 
 class FakeAccountPatternGenerator(BasePatternGenerator):
-    """Generates fake account abuse patterns."""
+    """Generates fake account abuse patterns with difficulty tiers."""
 
-    def generate(self, timestamp: datetime) -> Dict[str, Any]:
-        """Generate a fake account transaction record."""
-        # Very new accounts (0-3 days)
-        account_age_days = random.randint(0, 3)
+    def generate(self, timestamp: datetime, difficulty: str = 'easy') -> Dict[str, Any]:
+        """
+        Generate a fake account transaction record.
+
+        Args:
+            timestamp: Transaction timestamp
+            difficulty: 'easy', 'medium', or 'hard' detection difficulty
+        """
+        # Account age varies by difficulty
+        if difficulty == 'easy':
+            # Very obvious fake account (0-3 days)
+            account_age_days = random.randint(0, 3)
+            email_domain = random.choice(TEMP_EMAIL_DOMAINS)
+            email_verified = random.random() < 0.05  # 5% verified
+            phone_verified = random.random() < 0.02  # 2% verified
+            profile_complete = random.random() < 0.05  # 5% complete
+            abuse_confidence = random.uniform(0.85, 0.98)
+        elif difficulty == 'medium':
+            # Somewhat sophisticated (3-7 days, sometimes legit email)
+            account_age_days = random.randint(3, 7)
+            email_domain = random.choice(TEMP_EMAIL_DOMAINS) if random.random() < 0.6 else random.choice(LEGITIMATE_EMAIL_DOMAINS)
+            email_verified = random.random() < 0.3  # 30% verified
+            phone_verified = random.random() < 0.15  # 15% verified
+            profile_complete = random.random() < 0.2  # 20% complete
+            abuse_confidence = random.uniform(0.65, 0.80)
+        else:  # hard
+            # Well-aged fake account (7-30 days, looks more legitimate)
+            account_age_days = random.randint(7, 30)
+            email_domain = random.choice(LEGITIMATE_EMAIL_DOMAINS)  # Looks legitimate
+            email_verified = random.random() < 0.6  # 60% verified
+            phone_verified = random.random() < 0.4  # 40% verified
+            profile_complete = random.random() < 0.5  # 50% complete
+            abuse_confidence = random.uniform(0.45, 0.65)
+
         account_created_date = timestamp - timedelta(days=account_age_days)
 
-        # First purchase immediately or very soon after creation
-        days_since_first_purchase = 0 if random.random() > 0.3 else account_age_days
+        # First purchase timing varies by difficulty
+        if difficulty == 'easy':
+            days_since_first_purchase = 0  # Immediate purchase
+        elif difficulty == 'medium':
+            days_since_first_purchase = random.randint(0, min(3, account_age_days))
+        else:  # hard
+            days_since_first_purchase = random.randint(3, min(14, account_age_days))
 
         # New accounts have few orders
-        total_orders = random.randint(1, 3)
-
-        # Temporary email domain
-        email_domain = random.choice(TEMP_EMAIL_DOMAINS)
-
-        # Not verified
-        email_verified = random.random() < 0.1  # 10% verified
-        phone_verified = random.random() < 0.05  # 5% verified
-        profile_complete = random.random() < 0.1  # 10% complete
+        total_orders = random.randint(1, 3) if difficulty == 'easy' else random.randint(1, 5)
 
         # Geographic indicators
         country = random.choice(LOW_RISK_COUNTRIES + HIGH_RISK_COUNTRIES)
@@ -184,22 +212,27 @@ class FakeAccountPatternGenerator(BasePatternGenerator):
         # Order amount - varies widely
         order_amount = random.uniform(50.0, 500.0)
 
-        # Rushed behavior
-        session_duration = random.randint(30, 180)  # 30 seconds to 3 minutes
-        cart_additions = random.randint(1, 3)
+        # Session behavior varies by difficulty
+        if difficulty == 'easy':
+            session_duration = random.randint(30, 180)  # Very rushed
+            cart_additions = random.randint(1, 3)
+        elif difficulty == 'medium':
+            session_duration = random.randint(120, 600)  # Somewhat normal
+            cart_additions = random.randint(1, 5)
+        else:  # hard
+            session_duration = random.randint(180, 1200)  # Looks normal
+            cart_additions = random.randint(1, 7)
 
-        # Payment verification
-        cvv_result = random.choices(
-            ['pass', 'fail', 'not_checked'],
-            weights=[0.6, 0.2, 0.2]
-        )[0]
-        avs_result = random.choices(
-            ['full_match', 'partial_match', 'no_match'],
-            weights=[0.4, 0.3, 0.3]
-        )[0]
-
-        # Abuse confidence
-        abuse_confidence = random.uniform(0.7, 0.95)
+        # Payment verification varies by difficulty
+        if difficulty == 'easy':
+            cvv_result = random.choices(['pass', 'fail', 'not_checked'], weights=[0.5, 0.3, 0.2])[0]
+            avs_result = random.choices(['full_match', 'partial_match', 'no_match'], weights=[0.3, 0.3, 0.4])[0]
+        elif difficulty == 'medium':
+            cvv_result = random.choices(['pass', 'fail', 'not_checked'], weights=[0.7, 0.2, 0.1])[0]
+            avs_result = random.choices(['full_match', 'partial_match', 'no_match'], weights=[0.5, 0.3, 0.2])[0]
+        else:  # hard
+            cvv_result = random.choices(['pass', 'not_checked'], weights=[0.9, 0.1])[0]  # Usually passes
+            avs_result = random.choices(['full_match', 'partial_match'], weights=[0.7, 0.3])[0]
 
         return {
             'transaction_id': self._generate_transaction_id(timestamp),
@@ -249,14 +282,21 @@ class FakeAccountPatternGenerator(BasePatternGenerator):
             'is_abuse': True,
             'abuse_type': 'fake_account',
             'abuse_confidence': round(abuse_confidence, 2),
+            'difficulty_tier': difficulty,
         }
 
 
 class AccountTakeoverPatternGenerator(BasePatternGenerator):
-    """Generates account takeover abuse patterns."""
+    """Generates account takeover abuse patterns with difficulty tiers."""
 
-    def generate(self, timestamp: datetime) -> Dict[str, Any]:
-        """Generate an account takeover transaction record."""
+    def generate(self, timestamp: datetime, difficulty: str = 'easy') -> Dict[str, Any]:
+        """
+        Generate an account takeover transaction record.
+
+        Args:
+            timestamp: Transaction timestamp
+            difficulty: 'easy', 'medium', or 'hard' detection difficulty
+        """
         # Older, established accounts
         account_age_days = random.randint(90, 730)  # 3 months to 2 years
         account_created_date = timestamp - timedelta(days=account_age_days)
@@ -273,39 +313,80 @@ class AccountTakeoverPatternGenerator(BasePatternGenerator):
         # Legitimate email domain
         email_domain = random.choice(LEGITIMATE_EMAIL_DOMAINS)
 
-        # Suspicious login activity
-        failed_login_attempts_24h = random.randint(3, 15)
-        password_reset_count_30d = random.choices([0, 1, 2], weights=[0.3, 0.5, 0.2])[0]
+        # Login activity varies by difficulty
+        if difficulty == 'easy':
+            # Clear signs of takeover: many failed logins, password reset
+            failed_login_attempts_24h = random.randint(5, 15)
+            password_reset_count_30d = random.choices([1, 2], weights=[0.7, 0.3])[0]
+            abuse_confidence = random.uniform(0.85, 0.97)
+        elif difficulty == 'medium':
+            # Some suspicious activity but not overwhelming
+            failed_login_attempts_24h = random.randint(2, 6)
+            password_reset_count_30d = random.choices([0, 1], weights=[0.5, 0.5])[0]
+            abuse_confidence = random.uniform(0.65, 0.80)
+        else:  # hard
+            # Credential stuffing - no failed logins, looks like normal login
+            failed_login_attempts_24h = 0  # Successful credential reuse
+            password_reset_count_30d = 0
+            abuse_confidence = random.uniform(0.45, 0.65)
 
-        # Geographic anomaly - account from one country, transaction from another
+        # Geographic patterns vary by difficulty
         original_country = random.choice(LOW_RISK_COUNTRIES)
-        suspicious_country = random.choice(HIGH_RISK_COUNTRIES + LOW_RISK_COUNTRIES)
-        ip_country = suspicious_country
+        if difficulty == 'easy':
+            # Clear geographic anomaly - high-risk country
+            suspicious_country = random.choice(HIGH_RISK_COUNTRIES)
+            vpn_detected = random.random() < 0.5
+        elif difficulty == 'medium':
+            # Different country but could be legitimate travel
+            suspicious_country = random.choice(LOW_RISK_COUNTRIES)
+            vpn_detected = random.random() < 0.4
+        else:  # hard
+            # Same country or VPN masking location
+            suspicious_country = original_country if random.random() < 0.6 else random.choice(LOW_RISK_COUNTRIES)
+            vpn_detected = random.random() < 0.2  # Less obvious
 
-        # Shipping changed to different location
+        ip_country = suspicious_country
         card_country = original_country
         billing_country = original_country
-        shipping_country = suspicious_country if random.random() > 0.3 else random.choice(LOW_RISK_COUNTRIES)
 
-        # Higher than average order amount
+        # Shipping varies by difficulty
+        if difficulty == 'easy':
+            shipping_country = random.choice(HIGH_RISK_COUNTRIES + LOW_RISK_COUNTRIES)  # Often different
+        elif difficulty == 'medium':
+            shipping_country = suspicious_country if random.random() > 0.4 else original_country
+        else:  # hard
+            shipping_country = original_country if random.random() > 0.3 else suspicious_country
+
+        # Order amount varies by difficulty
         historical_avg = random.uniform(40.0, 150.0)
-        order_amount = historical_avg * random.uniform(1.5, 4.0)  # 1.5x to 4x higher
+        if difficulty == 'easy':
+            order_amount = historical_avg * random.uniform(2.0, 4.0)  # Much higher
+        elif difficulty == 'medium':
+            order_amount = historical_avg * random.uniform(1.3, 2.5)  # Somewhat higher
+        else:  # hard
+            order_amount = historical_avg * random.uniform(0.9, 1.8)  # Close to normal
 
-        # Quick checkout (attacker knows what they want)
-        session_duration = random.randint(60, 300)  # 1-5 minutes
-        cart_additions = random.randint(1, 3)
+        # Session behavior varies by difficulty
+        if difficulty == 'easy':
+            session_duration = random.randint(60, 300)  # Very quick
+            cart_additions = random.randint(1, 3)
+        elif difficulty == 'medium':
+            session_duration = random.randint(180, 600)  # Quick but not obviously
+            cart_additions = random.randint(2, 5)
+        else:  # hard
+            session_duration = random.randint(300, 1200)  # More normal
+            cart_additions = random.randint(2, 6)
 
-        # Payment verification
-        cvv_result = random.choices(
-            ['pass', 'fail', 'not_checked'],
-            weights=[0.5, 0.3, 0.2]
-        )[0]
-        avs_result = random.choices(
-            ['full_match', 'partial_match', 'no_match'],
-            weights=[0.3, 0.4, 0.3]
-        )[0]
-
-        abuse_confidence = random.uniform(0.75, 0.95)
+        # Payment verification varies by difficulty
+        if difficulty == 'easy':
+            cvv_result = random.choices(['pass', 'fail', 'not_checked'], weights=[0.4, 0.4, 0.2])[0]
+            avs_result = random.choices(['full_match', 'partial_match', 'no_match'], weights=[0.3, 0.3, 0.4])[0]
+        elif difficulty == 'medium':
+            cvv_result = random.choices(['pass', 'fail', 'not_checked'], weights=[0.6, 0.2, 0.2])[0]
+            avs_result = random.choices(['full_match', 'partial_match', 'no_match'], weights=[0.5, 0.3, 0.2])[0]
+        else:  # hard
+            cvv_result = random.choices(['pass', 'not_checked'], weights=[0.85, 0.15])[0]
+            avs_result = random.choices(['full_match', 'partial_match'], weights=[0.7, 0.3])[0]
 
         return {
             'transaction_id': self._generate_transaction_id(timestamp),
@@ -322,13 +403,13 @@ class AccountTakeoverPatternGenerator(BasePatternGenerator):
             'failed_login_attempts_24h': failed_login_attempts_24h,
             'successful_logins_7d': random.randint(1, 3),
             'password_reset_count_30d': password_reset_count_30d,
-            'device_id': self._generate_device_id(),  # New device
+            'device_id': self._generate_device_id(),
             'ip_address': self._generate_ip_address(suspicious_country),
             'ip_country': ip_country,
             'user_agent': random.choice(USER_AGENTS),
             'device_type': random.choice(DEVICE_TYPES),
-            'new_device': True,  # Attacker using different device
-            'vpn_proxy_detected': random.random() < 0.4,  # 40% VPN usage
+            'new_device': True if difficulty == 'easy' else (random.random() < 0.7),
+            'vpn_proxy_detected': vpn_detected,
             'payment_method': random.choices(
                 PAYMENT_METHODS,
                 weights=[0.5, 0.3, 0.15, 0.05]
@@ -351,67 +432,100 @@ class AccountTakeoverPatternGenerator(BasePatternGenerator):
             'avg_order_value': round(historical_avg, 2),
             'session_duration_seconds': session_duration,
             'cart_additions_session': cart_additions,
-            'high_risk_category': random.random() < 0.6,  # 60% high-risk items
+            'high_risk_category': random.random() < 0.6 if difficulty == 'easy' else (random.random() < 0.4),
             'is_abuse': True,
             'abuse_type': 'account_takeover',
             'abuse_confidence': round(abuse_confidence, 2),
+            'difficulty_tier': difficulty,
         }
 
 
 class PaymentFraudPatternGenerator(BasePatternGenerator):
-    """Generates payment fraud patterns."""
+    """Generates payment fraud patterns with difficulty tiers."""
 
-    def generate(self, timestamp: datetime) -> Dict[str, Any]:
-        """Generate a payment fraud transaction record."""
-        # Account age varies - can be new or established
-        account_age_days = random.randint(1, 180)
+    def generate(self, timestamp: datetime, difficulty: str = 'easy') -> Dict[str, Any]:
+        """
+        Generate a payment fraud transaction record.
+
+        Args:
+            timestamp: Transaction timestamp
+            difficulty: 'easy', 'medium', or 'hard' detection difficulty
+        """
+        # Account age varies by difficulty
+        if difficulty == 'easy':
+            account_age_days = random.randint(1, 30)  # Newer accounts
+            abuse_confidence = random.uniform(0.85, 0.97)
+        elif difficulty == 'medium':
+            account_age_days = random.randint(15, 90)  # Some history
+            abuse_confidence = random.uniform(0.65, 0.80)
+        else:  # hard
+            account_age_days = random.randint(60, 180)  # Established accounts
+            abuse_confidence = random.uniform(0.45, 0.65)
         account_created_date = timestamp - timedelta(days=account_age_days)
 
         days_since_first_purchase = random.randint(0, min(30, account_age_days))
         total_orders = random.randint(1, 10)
 
-        # Mixed verification status
-        email_verified = random.random() > 0.4
-        phone_verified = random.random() > 0.6
-        profile_complete = random.random() > 0.5
-
-        # Choose email domain - 60% legitimate, 40% temporary
-        if random.random() < 0.6:
+        # Verification varies by difficulty
+        if difficulty == 'easy':
+            email_verified = random.random() < 0.3
+            phone_verified = random.random() < 0.2
+            profile_complete = random.random() < 0.3
+            email_domain = random.choice(TEMP_EMAIL_DOMAINS) if random.random() < 0.5 else random.choice(LEGITIMATE_EMAIL_DOMAINS)
+        elif difficulty == 'medium':
+            email_verified = random.random() < 0.6
+            phone_verified = random.random() < 0.4
+            profile_complete = random.random() < 0.5
             email_domain = random.choice(LEGITIMATE_EMAIL_DOMAINS)
-        else:
-            email_domain = random.choice(TEMP_EMAIL_DOMAINS)
+        else:  # hard
+            email_verified = random.random() < 0.8
+            phone_verified = random.random() < 0.7
+            profile_complete = random.random() < 0.7
+            email_domain = random.choice(LEGITIMATE_EMAIL_DOMAINS)
 
-        # Geographic mismatches - key fraud indicator
-        ip_country = random.choice(LOW_RISK_COUNTRIES + HIGH_RISK_COUNTRIES)
-        card_country = random.choice(LOW_RISK_COUNTRIES)  # Stolen cards often from low-risk countries
-        billing_country = random.choice(LOW_RISK_COUNTRIES + HIGH_RISK_COUNTRIES)
-        shipping_country = random.choice(LOW_RISK_COUNTRIES)
-
-        # Ensure mismatches
-        if random.random() > 0.3:  # 70% have mismatches
+        # Geographic mismatches vary by difficulty
+        card_country = random.choice(LOW_RISK_COUNTRIES)
+        if difficulty == 'easy':
+            # Multiple clear mismatches
+            ip_country = random.choice(HIGH_RISK_COUNTRIES)
             billing_country = random.choice([c for c in LOW_RISK_COUNTRIES if c != card_country])
+            shipping_country = random.choice([c for c in LOW_RISK_COUNTRIES if c != card_country and c != billing_country])
+        elif difficulty == 'medium':
+            # One or two mismatches
+            ip_country = random.choice(LOW_RISK_COUNTRIES + HIGH_RISK_COUNTRIES)
+            billing_country = card_country if random.random() < 0.5 else random.choice(LOW_RISK_COUNTRIES)
+            shipping_country = random.choice(LOW_RISK_COUNTRIES)
+        else:  # hard
+            # Only shipping mismatch (could be gift)
+            ip_country = random.choice(LOW_RISK_COUNTRIES)
+            billing_country = card_country
+            shipping_country = random.choice(LOW_RISK_COUNTRIES) if random.random() < 0.7 else card_country
 
-        # High-value orders with high-risk items
-        order_amount = random.uniform(200.0, 2000.0)
+        # Order amount varies by difficulty
+        if difficulty == 'easy':
+            order_amount = random.uniform(500.0, 2000.0)  # Very high
+        elif difficulty == 'medium':
+            order_amount = random.uniform(200.0, 800.0)  # Moderate
+        else:  # hard
+            order_amount = random.uniform(100.0, 500.0)  # More normal
 
         # Session behavior
         session_duration = random.randint(60, 600)
         cart_additions = random.randint(1, 10)
 
-        # Failed payment verification - strong fraud signal
-        cvv_result = random.choices(
-            ['pass', 'fail', 'not_checked'],
-            weights=[0.3, 0.5, 0.2]
-        )[0]
-        avs_result = random.choices(
-            ['full_match', 'partial_match', 'no_match'],
-            weights=[0.2, 0.3, 0.5]
-        )[0]
-
-        # Multiple payment attempts (card testing)
-        orders_24h = random.randint(1, 8)
-
-        abuse_confidence = random.uniform(0.7, 0.98)
+        # Payment verification varies significantly by difficulty
+        if difficulty == 'easy':
+            cvv_result = random.choices(['pass', 'fail', 'not_checked'], weights=[0.2, 0.6, 0.2])[0]
+            avs_result = random.choices(['full_match', 'partial_match', 'no_match'], weights=[0.2, 0.2, 0.6])[0]
+            orders_24h = random.randint(3, 8)  # Multiple attempts
+        elif difficulty == 'medium':
+            cvv_result = random.choices(['pass', 'fail', 'not_checked'], weights=[0.5, 0.3, 0.2])[0]
+            avs_result = random.choices(['full_match', 'partial_match', 'no_match'], weights=[0.4, 0.4, 0.2])[0]
+            orders_24h = random.randint(1, 3)
+        else:  # hard
+            cvv_result = random.choices(['pass', 'not_checked'], weights=[0.85, 0.15])[0]
+            avs_result = random.choices(['full_match', 'partial_match'], weights=[0.6, 0.4])[0]
+            orders_24h = random.choices([0, 1], weights=[0.7, 0.3])[0]
 
         return {
             'transaction_id': self._generate_transaction_id(timestamp),
@@ -457,8 +571,166 @@ class PaymentFraudPatternGenerator(BasePatternGenerator):
             'avg_order_value': round(order_amount * random.uniform(0.7, 1.3), 2),
             'session_duration_seconds': session_duration,
             'cart_additions_session': cart_additions,
-            'high_risk_category': random.random() < 0.8,  # 80% high-risk items (electronics, gift cards)
+            'high_risk_category': random.random() < (0.9 if difficulty == 'easy' else (0.6 if difficulty == 'medium' else 0.3)),
             'is_abuse': True,
             'abuse_type': 'payment_fraud',
             'abuse_confidence': round(abuse_confidence, 2),
+            'difficulty_tier': difficulty,
+        }
+
+
+class SuspiciousButLegitimatePatternGenerator(BasePatternGenerator):
+    """
+    Generates suspicious but legitimate transaction patterns.
+
+    These are legitimate users whose behavior triggers fraud signals but are
+    actually benign. Examples: VPN users, travelers, gift buyers, power shoppers.
+    Creates the false positive zone where human review is needed.
+    """
+
+    def generate(self, timestamp: datetime, difficulty: str = 'n/a') -> Dict[str, Any]:
+        """
+        Generate a suspicious but legitimate transaction record.
+
+        These patterns create the ambiguous zone (0.4-0.7 confidence) where
+        models should be uncertain and trigger human review.
+        """
+        # Choose suspicious behavior type
+        behavior_type = random.choice(['vpn_user', 'traveler', 'gift_buyer', 'power_shopper', 'expat'])
+
+        # Established legitimate account
+        account_age_days = random.randint(60, 730)
+        account_created_date = timestamp - timedelta(days=account_age_days)
+        days_since_first_purchase = random.randint(0, min(60, account_age_days - 10))
+        total_orders = random.randint(5, 40)
+
+        # Verified legitimate account
+        email_verified = True
+        phone_verified = random.random() > 0.2
+        profile_complete = random.random() > 0.3
+        email_domain = random.choice(LEGITIMATE_EMAIL_DOMAINS)
+
+        # Base country
+        home_country = random.choice(LOW_RISK_COUNTRIES)
+
+        if behavior_type == 'vpn_user':
+            # Privacy-conscious user always on VPN
+            ip_country = random.choice(LOW_RISK_COUNTRIES + HIGH_RISK_COUNTRIES)
+            card_country = home_country
+            billing_country = home_country
+            shipping_country = home_country
+            vpn_proxy_detected = True
+            new_device = random.random() < 0.2
+            order_amount = random.uniform(30.0, 300.0)
+            high_risk_items = random.random() < 0.3
+            abuse_confidence = random.uniform(0.45, 0.65)
+
+        elif behavior_type == 'traveler':
+            # Legitimate user traveling/relocated
+            ip_country = random.choice(LOW_RISK_COUNTRIES)  # Different country
+            card_country = home_country
+            billing_country = home_country
+            shipping_country = random.choice([home_country, ip_country])  # Ship to hotel or home
+            vpn_proxy_detected = random.random() < 0.3
+            new_device = random.random() < 0.4  # Maybe new device
+            order_amount = random.uniform(40.0, 400.0)
+            high_risk_items = random.random() < 0.2
+            abuse_confidence = random.uniform(0.40, 0.60)
+
+        elif behavior_type == 'gift_buyer':
+            # Buying gift for someone else
+            ip_country = home_country
+            card_country = home_country
+            billing_country = home_country
+            shipping_country = random.choice(LOW_RISK_COUNTRIES)  # Different shipping address
+            vpn_proxy_detected = random.random() < 0.1
+            new_device = random.random() < 0.15
+            order_amount = random.uniform(50.0, 500.0)
+            high_risk_items = random.random() < 0.4  # Electronics as gifts
+            abuse_confidence = random.uniform(0.35, 0.55)
+
+        elif behavior_type == 'power_shopper':
+            # High-velocity legitimate user
+            ip_country = home_country
+            card_country = home_country
+            billing_country = home_country
+            shipping_country = home_country
+            vpn_proxy_detected = random.random() < 0.15
+            new_device = random.random() < 0.1
+            order_amount = random.uniform(100.0, 800.0)
+            high_risk_items = random.random() < 0.5
+            abuse_confidence = random.uniform(0.40, 0.65)
+            orders_24h = random.randint(2, 5)  # Many orders
+            orders_7d = random.randint(5, 15)
+        else:  # expat
+            # Living abroad, shipping to foreign address regularly
+            ip_country = random.choice(LOW_RISK_COUNTRIES)
+            card_country = home_country
+            billing_country = home_country
+            shipping_country = ip_country  # Ships to current location
+            vpn_proxy_detected = random.random() < 0.2
+            new_device = random.random() < 0.2
+            order_amount = random.uniform(40.0, 400.0)
+            high_risk_items = random.random() < 0.25
+            abuse_confidence = random.uniform(0.35, 0.60)
+
+        # Set default velocity for non-power-shoppers
+        if behavior_type != 'power_shopper':
+            orders_24h = random.choices([0, 1], weights=[0.6, 0.4])[0]
+            orders_7d = random.randint(1, 4)
+
+        # Normal session behavior (legitimate users take time)
+        session_duration = random.randint(180, 1800)
+        cart_additions = random.randint(1, 6)
+
+        # Clean payment verification (legitimate payment methods)
+        cvv_result = random.choices(['pass', 'not_checked'], weights=[0.9, 0.1])[0]
+        avs_result = random.choices(['full_match', 'partial_match'], weights=[0.8, 0.2])[0]
+
+        # Historical average
+        avg_order_value = random.uniform(50.0, 250.0)
+
+        return {
+            'transaction_id': self._generate_transaction_id(timestamp),
+            'timestamp': timestamp,
+            'user_id': self._generate_user_id(),
+            'order_amount': round(order_amount, 2),
+            'currency': 'USD',
+            'account_created_date': account_created_date,
+            'account_age_days': account_age_days,
+            'email_domain': email_domain,
+            'phone_verified': phone_verified,
+            'email_verified': email_verified,
+            'profile_complete': profile_complete,
+            'failed_login_attempts_24h': random.choices([0, 1], weights=[0.95, 0.05])[0],
+            'successful_logins_7d': random.randint(3, 15),
+            'password_reset_count_30d': random.choices([0, 1], weights=[0.9, 0.1])[0],
+            'device_id': self._generate_device_id(),
+            'ip_address': self._generate_ip_address(ip_country),
+            'ip_country': ip_country,
+            'user_agent': random.choice([ua for ua in USER_AGENTS if 'Bot' not in ua and 'curl' not in ua]),
+            'device_type': random.choice(DEVICE_TYPES),
+            'new_device': new_device,
+            'vpn_proxy_detected': vpn_proxy_detected,
+            'payment_method': random.choices(PAYMENT_METHODS, weights=[0.5, 0.3, 0.15, 0.05])[0],
+            'card_bin': random.choice(ALL_CARD_BINS),
+            'card_country': card_country,
+            'billing_country': billing_country,
+            'shipping_country': shipping_country,
+            'billing_shipping_match': billing_country == shipping_country,
+            'cvv_check_result': cvv_result,
+            'avs_result': avs_result,
+            'payment_processor_response': 'approved',
+            'days_since_account_first_purchase': days_since_first_purchase,
+            'total_orders_lifetime': total_orders,
+            'orders_last_24h': orders_24h,
+            'orders_last_7d': orders_7d,
+            'avg_order_value': round(avg_order_value, 2),
+            'session_duration_seconds': session_duration,
+            'cart_additions_session': cart_additions,
+            'high_risk_category': high_risk_items,
+            'is_abuse': False,  # Actually legitimate!
+            'abuse_type': 'suspicious_but_legitimate',
+            'abuse_confidence': round(abuse_confidence, 2),
+            'difficulty_tier': 'n/a',  # Not fraud, so no difficulty tier
         }
