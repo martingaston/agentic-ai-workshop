@@ -212,11 +212,29 @@ abuse-workshop/
 │   ├── generate_synthetic_data.py  # Main generation script
 │   └── patterns.py                 # Pattern generators for each abuse type
 ├── model/
-│   └── example_ml_pipeline.py      # Example ML training pipeline
+│   ├── artifacts/                  # Trained model files (committed for workshop simplicity)
+│   │   ├── fraud_model.joblib      # Trained classifier
+│   │   ├── preprocessor.joblib     # Feature preprocessor
+│   │   └── metadata.json           # Model metadata
+│   ├── example_ml_pipeline.py      # Example ML training pipeline
+│   ├── train_and_save.py           # Model training script
+│   └── preprocessing.py            # Feature preprocessing
+├── api/
+│   ├── main.py                     # FastAPI application
+│   ├── models.py                   # Request/response models
+│   └── predictor.py                # Prediction logic
 ├── schema.py                       # Data schema and constants
 ├── README.md                       # This file
 └── *.csv                           # Generated datasets (not in git)
 ```
+
+**Note on Model Artifacts:** For this workshop, trained model files are committed to the repository for simplicity. In production, model artifacts should **not** be committed to git because they:
+- Are large binary files that bloat the repository
+- Change frequently during retraining cycles
+- Don't diff well in version control
+- Should be stored in dedicated model registries (e.g., MLflow, W&B, AWS SageMaker Model Registry, Azure ML Model Registry)
+
+For production deployments, regenerate models using `uv run python -m model.train_and_save` or fetch them from your model registry.
 
 ## Design Rationale
 
