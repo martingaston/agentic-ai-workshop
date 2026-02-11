@@ -294,13 +294,16 @@ def signal_handler(signum, frame):
 
 def main():
     """Main entry point."""
+    # Force line-buffered output for real-time display when piping to tee
+    sys.stdout.reconfigure(line_buffering=True)
+
     parser = argparse.ArgumentParser(
         description='Load test the fraud detection API'
     )
     parser.add_argument(
         '--api-url',
-        default='http://localhost:8081',
-        help='API base URL (default: http://localhost:8081)'
+        default='http://localhost:8001',
+        help='API base URL (default: http://localhost:8001)'
     )
     parser.add_argument(
         '--rate',
