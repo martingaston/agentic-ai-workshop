@@ -49,7 +49,7 @@ class APILoadTester:
             dataset_path: Path to the CSV dataset
         """
         self.api_url = api_url
-        self.predict_url = f"{api_url}/api/v1/predict"
+        self.predict_url = f"{api_url}/api/v1/review"
         self.rate = rate
         self.fraud_ratio = fraud_ratio
         self.dataset_path = dataset_path
@@ -87,10 +87,26 @@ class APILoadTester:
 
         for _, row in legit_df.iterrows():
             transaction = row.drop(exclude_cols).to_dict()
+            # Convert datetime strings to ISO 8601 format
+            if 'timestamp' in transaction:
+                transaction['timestamp'] = str(transaction['timestamp']).replace(' ', 'T')
+            if 'account_created_date' in transaction:
+                transaction['account_created_date'] = str(transaction['account_created_date']).replace(' ', 'T')
+            # Convert card_bin to string (API expects string, pandas reads as int)
+            if 'card_bin' in transaction:
+                transaction['card_bin'] = str(transaction['card_bin'])
             self.legitimate_transactions.append(transaction)
 
         for _, row in fraud_df.iterrows():
             transaction = row.drop(exclude_cols).to_dict()
+            # Convert datetime strings to ISO 8601 format
+            if 'timestamp' in transaction:
+                transaction['timestamp'] = str(transaction['timestamp']).replace(' ', 'T')
+            if 'account_created_date' in transaction:
+                transaction['account_created_date'] = str(transaction['account_created_date']).replace(' ', 'T')
+            # Convert card_bin to string (API expects string, pandas reads as int)
+            if 'card_bin' in transaction:
+                transaction['card_bin'] = str(transaction['card_bin'])
             self.fraudulent_transactions.append(transaction)
 
         print(f"{Colors.GREEN}✓ Transactions loaded successfully{Colors.RESET}\n")
@@ -123,7 +139,7 @@ class APILoadTester:
             if response.status_code == 200:
                 result = response.json()
                 legitimacy_score = result['legitimacy_score']
-                prediction = result['prediction']
+                decision = result['decision']
 
                 # Track scores
                 if is_fraud:
@@ -133,7 +149,13 @@ class APILoadTester:
 
                 # Color code based on correctness
                 expected = 'FRAUD' if is_fraud else 'LEGIT'
-                predicted = 'FRAUD' if prediction == 'fraud' else 'LEGIT'
+                # Map decision to FRAUD/LEGIT: deny=FRAUD, approve=LEGIT, review=depends on score
+                if decision == 'deny':
+                    predicted = 'FRAUD'
+                elif decision == 'approve':
+                    predicted = 'LEGIT'
+                else:  # review
+                    predicted = 'REVIEW'
 
                 if expected == predicted:
                     status_icon = f"{Colors.GREEN}✓{Colors.RESET}"
@@ -153,10 +175,16 @@ class APILoadTester:
                 self.total_response_time += elapsed_ms
 
             else:
+                error_detail = response.text
                 print(
                     f"[{timestamp}] {Colors.RED}✗{Colors.RESET} {transaction_id[:12]:12s} | "
-                    f"HTTP {response.status_code}: {response.text[:50]}"
+                    f"HTTP {response.status_code}"
                 )
+                if response.status_code == 422:
+                    print(f"{Colors.YELLOW}Validation error details:{Colors.RESET}")
+                    print(error_detail)
+                else:
+                    print(f"Error: {error_detail[:200]}")
                 self.failed_requests += 1
 
         except httpx.TimeoutException:
@@ -271,8 +299,8 @@ def main():
     )
     parser.add_argument(
         '--api-url',
-        default='http://localhost:8000',
-        help='API base URL (default: http://localhost:8000)'
+        default='http://localhost:8081',
+        help='API base URL (default: http://localhost:8081)'
     )
     parser.add_argument(
         '--rate',

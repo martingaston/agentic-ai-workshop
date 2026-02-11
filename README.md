@@ -160,40 +160,143 @@ uv run python -m data.generate_synthetic_data --size 10000
 uv run python -m model.example_ml_pipeline abuse_dataset_10000.csv
 ```
 
-### Basic ML Pipeline (Custom Code)
+## Running the API Services
 
-```python
-import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
+This workshop includes two API services that work together:
 
-# Load dataset
-df = pd.read_csv('abuse_dataset_50000.csv')
+1. **ML Service** (Port 8000) - Basic fraud detection using the trained ML model
+2. **Agent Service** (Port 8001) - Intelligent decision-making with auto-approve/deny and agent review
 
-# Prepare features (example - you'll want more sophisticated feature engineering)
-feature_cols = [
-    'account_age_days', 'email_verified', 'phone_verified',
-    'failed_login_attempts_24h', 'new_device', 'vpn_proxy_detected',
-    'billing_shipping_match', 'orders_last_24h', 'high_risk_category'
-]
+### Architecture
 
-X = df[feature_cols]
-y = df['is_abuse']
-
-# Train/test split
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
-
-# Train model
-clf = RandomForestClassifier(n_estimators=100, random_state=42)
-clf.fit(X_train, y_train)
-
-# Evaluate
-y_pred = clf.predict(X_test)
-print(classification_report(y_test, y_pred))
 ```
+Transaction → Agent Service (8001) → ML Service (8000) → Model Prediction
+                     ↓
+              Decision Engine
+                     ↓
+         approve / deny / review
+```
+
+### 1. Start the ML Service (Port 8000)
+
+The ML service provides the core fraud detection model API.
+
+```bash
+# Make sure you have a trained model
+uv run python -m model.train_and_save
+
+# Start the ML service
+uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+**Endpoints:**
+- `GET /api/v1/health` - Health check
+- `GET /api/v1/model/info` - Model metadata
+- `POST /api/v1/predict` - Score a transaction (returns legitimacy score 0.0-1.0)
+
+**Test it:**
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+### 2. Start the Agent Service (Port 8001)
+
+The agent service wraps the ML service with intelligent decision-making.
+
+```bash
+# In a new terminal, start the agent service
+uv run uvicorn agent.main:app --host 0.0.0.0 --port 8001
+```
+
+**Decision Logic:**
+- `legitimacy_score >= 0.7` → **Auto-approve** (low fraud risk)
+- `legitimacy_score <= 0.4` → **Auto-deny** (high fraud risk)
+- `0.4 < legitimacy_score < 0.7` → **Agent review** (uncertain, needs human review)
+
+**Endpoints:**
+- `GET /api/v1/health` - Health check (includes ML service status)
+- `GET /api/v1/agent/info` - Agent configuration and thresholds
+- `POST /api/v1/review` - Review transaction and make decision
+
+**Test it:**
+```bash
+curl http://localhost:8001/api/v1/health
+```
+
+### 3. Test the Services
+
+#### Load Testing
+
+Send a stream of mixed legitimate and fraudulent transactions:
+
+```bash
+# Send 1 request per second (50% fraud, 50% legitimate)
+uv run python test_api.py --rate 1.0 --fraud-ratio 0.5
+
+# Higher rate testing
+uv run python test_api.py --rate 5.0 --fraud-ratio 0.3
+
+# Custom dataset
+uv run python test_api.py --dataset data/abuse_dataset_10000.csv
+```
+
+**Load Test Options:**
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--api-url` | Agent service URL | http://localhost:8001 |
+| `--rate` | Requests per second | 1.0 |
+| `--fraud-ratio` | Ratio of fraud transactions | 0.5 |
+| `--dataset` | Path to dataset CSV | abuse_dataset_5000_v2.csv |
+
+#### Test Review Zone Transactions
+
+Test specific transactions that fall in the uncertain review zone (0.4-0.7):
+
+```bash
+uv run python test_review_transactions.py
+```
+
+#### Manual API Testing
+
+Test the ML service directly:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transaction_id": "test-001",
+    "timestamp": "2025-02-11T10:00:00",
+    "user_id": "user-123",
+    "account_age_days": 5,
+    "email_domain": "tempmail.net",
+    "phone_verified": false,
+    "order_amount": 299.99,
+    "new_device": true
+  }'
+```
+
+Test the agent service:
+
+```bash
+curl -X POST http://localhost:8001/api/v1/review \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transaction_id": "test-001",
+    "timestamp": "2025-02-11T10:00:00",
+    "user_id": "user-123",
+    "account_age_days": 5,
+    "email_domain": "tempmail.net",
+    "phone_verified": false,
+    "order_amount": 299.99,
+    "new_device": true
+  }'
+```
+
+### API Documentation
+
+Once the services are running, view interactive API documentation:
+- ML Service: http://localhost:8000/docs
+- Agent Service: http://localhost:8001/docs
 
 ## Dataset Validation
 
