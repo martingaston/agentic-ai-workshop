@@ -1,23 +1,4 @@
-# Synthetic Ecommerce Abuse Detection Dataset
-
-A Python-based generator for creating realistic synthetic datasets to train ML models for detecting account abuse and payment fraud in ecommerce platforms.
-
-## Overview
-
-This tool generates CSV datasets with realistic patterns for:
-- **Legitimate transactions** (~75% of data)
-- **Fake account abuse** (~10% of data) - New accounts with temporary emails, unverified profiles
-- **Account takeover** (~8% of data) - Established accounts with suspicious device/location changes
-- **Payment fraud** (~7% of data) - Geographic mismatches, failed verification, high-risk items
-
-## Features
-
-- **40+ realistic features** including account, device, network, payment, and behavioral signals
-- **Pattern-based generation** with characteristic distributions for each abuse type
-- **Configurable class distributions** to match your training needs
-- **Reproducible** with random seed support
-- **Validation** with built-in quality checks
-- **Scalable** - generate 10K to 100K+ records
+## Agentic Workshop
 
 ## Quick Start
 
