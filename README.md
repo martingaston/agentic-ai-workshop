@@ -41,9 +41,6 @@ Transaction → Agent Service (8001) → ML Service (8000) → Model Prediction
 The ML service provides the core fraud detection model API.
 
 ```bash
-# Make sure you have a trained model
-uv run python -m model.train_and_save
-
 # Start the ML service
 uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
